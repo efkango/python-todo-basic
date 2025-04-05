@@ -153,15 +153,14 @@ except asyncpg.UniqueViolationError:
  -H "Content-Type: application/json" 
  -d '{"name": "exam", "email": "exam@example.com"}' 
 ```
-
 ## BATCH POST:
 ```bash
-curl -X POST http://localhost:8000/batch \
+curl -X POST http://localhost:8000/batch-create \
 -H "Content-Type: application/json" \
 -d '[
-    {"name": "User 1", "email": "user1@example.com"},
-    {"name": "User 2", "email": "user2@example.com"},
-    {"name": "User 3", "email": "user3@example.com"}
+    {"name": "Ali Yilmaz", "email": "ali@test.com"},
+    {"name": "Ayse Demir", "email": "ayse@test.com"},
+    {"name": "Mehmet Kaya", "email": "mehmet@test.com"}
 ]'
 ```
 
@@ -173,24 +172,24 @@ curl -X POST http://localhost:8000/batch \
             "status": "success",
             "user": {
                 "id": 1,
-                "name": "User 1",
-                "email": "user1@example.com"
+                "name": "Ali Yilmaz",
+                "email": "ali@test.com"
             }
         },
         {
             "status": "success",
             "user": {
                 "id": 2,
-                "name": "User 2",
-                "email": "user2@example.com"
+                "name": "Ayse Demir",
+                "email": "ayse@test.com"
             }
         },
         {
             "status": "success",
             "user": {
                 "id": 3,
-                "name": "User 3",
-                "email": "user3@example.com"
+                "name": "Mehmet Kaya",
+                "email": "mehmet@test.com"
             }
         }
     ]
