@@ -1,0 +1,198 @@
+# Basic UserAPI TODO
+
+# 1. Özet 
+###  PostgreSQL veritabanı üzerinde çalışan ve iki temel işlemi destekleyen bir servistir:
+* **_GET_** /users: Tüm kullanıcıları listeler
+* **_POST_** /users: Yeni kullanıcı ekler
+
+### Tech Stack:
+* **_Sanic_**: HTTP sunucusu (async)
+* **_asyncpg_**: PostgreSQL async connection kütüphanesi
+* **_asyncio_**:  Async/await temelli paralel çalışma altyapısı 
+
+# 2. Kütüphanelerin Kullanım Amacı
+
+# a) Sanic (Web Framework):
+* **_Ne Yapar?_**: Async HTTP sunucusu sağlar
+* **_Neden Kullandık?_**: Yüksek performanslı, asenkron endpoint'ler oluşturmak için
+* **_Usage Exam_**
+```python
+app = Sanic("SimpleUserApp")  # Uygulama instance'ı
+@app.get('/users')  # GET endpoint
+app.run()  # Sunucuyu başlat
+```
+
+> Normal sync bir paket kullansaydık aynı anda 100 istek gelirse, her birini sırayla işlerdik. Biraz kod ile örneklersek:
+
+```python
+@app.route('/users')
+def get_users():
+    users = db.query("SELECT * FROM users")  # Bu satır işlem bitene kadar bekler
+    return jsonify(users)
+```
+
+> Böyle bir logic yerine sanic kullandığımızda:
+
+```python
+# Sanic (async örnek)
+@app.get('/users')
+async def get_users(request):
+    async with pool.acquire() as conn:
+        users = await conn.fetch("SELECT * FROM users")  # Bekleme yok, diğer isteklere geçer
+    return json(users)
+```
+
+# b) asyncpg (PostgreSQL Driver):
+* **_Ne Yapar?_**: Asenkron PostgreSQL veritabanı sürücüsü
+* **_Neden Kullandık?_**: Veritabanı işlemlerini async yapabilmek için
+* **_Usage Exam_**
+```python
+pool = await asyncpg.create_pool(**DB_CONFIG)
+async with pool.acquire() as conn:
+    users = await conn.fetch("SELECT * FROM users")
+```
+
+> Normal psycopg2 kullansaydık her sorgu blocking olurdu:
+
+```python
+# psycopg2 (sync örnek)
+with psycopg2.connect("dbname=test") as conn:
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM users")  # Bu satırın bitmesi beklenir
+    users = cur.fetchall()
+```
+
+> Bunun yerine asyncpg ile:
+
+```python
+# asyncpg (async örnek)
+async with pool.acquire() as conn:
+    users = await conn.fetch("SELECT * FROM users")  # Diğer işlemler devam edebilir
+```
+
+# c) asyncio (Async I/O):
+* **_Ne Yapar?_**: Python'da asenkron programlama altyapısı sağlar
+* **_Neden Kullandık?_**: Çoklu işlemleri paralel yürütmek için
+* **_Usage Exam_**
+```python
+tasks = [create_user(data) for data in users]
+results = await asyncio.gather(*tasks)
+```
+
+> Normal threading kullansaydık:
+
+```python
+# Threading (sync örnek)
+threads = []
+for data in users:
+    thread = threading.Thread(target=create_user, args=(data,))
+    threads.append(thread)
+    thread.start()  # Her thread sistem kaynağı kullanır
+```
+
+> Bunun yerine asyncio ile:
+
+```python
+# asyncio (async örnek)
+async def batch_create():
+    tasks = [create_user(data) for data in users]
+    results = await asyncio.gather(*tasks)  # Tek thread'de çoklu iş
+```
+
+# 3. Temel Çalışma Mantığı
+```python
+sequenceDiagram
+    Client->>+API: GET /users
+    API->>+PostgreSQL: SELECT * FROM users
+    PostgreSQL-->>-API: User listesi
+    API-->>-Client: JSON response
+
+    Client->>+API: POST /users (JSON data)
+    API->>+PostgreSQL: INSERT user
+    PostgreSQL-->>-API: Created user
+    API-->>-Client: 201 Created
+```
+
+# Kritik Noktalar
+
+## 1. Bağlantı Havuzu:
+```python
+app.ctx.pool = await asyncpg.create_pool()
+```
+* Her istekte yeni bağlantı açmaz, performans artar
+
+## 2. Async/Await:
+```python
+async def get_users():
+    users = await conn.fetch()
+```
+* Bloklamayan I/O 
+
+## 3. Hata Yönetimi
+```python
+except asyncpg.UniqueViolationError:
+    return json({"error": "Email exists"}, 400)
+```
+* Email datası çakışmaları özel olarak yakalanır
+
+# Outputs
+
+## GET
+
+* Curl Request: ```json curl http://localhost:8000/users```
+
+```python
+[{"id":1,"name":"Ahmet","email":"ahmet@example.com"},{"id":2,"name":"mehmet","email":"mehmet@example.com"},{"id":3,"name":"John","email":"john@example.com"}]
+```
+
+## POST 
+
+* Curls Request:
+ ```json
+ curl -X POST http://localhost:8000/users 
+ -H "Content-Type: application/json" 
+ -d '{"name": "exam", "email": "exam@example.com"}' 
+```
+
+## BATCH POST:
+```bash
+curl -X POST http://localhost:8000/batch \
+-H "Content-Type: application/json" \
+-d '[
+    {"name": "User 1", "email": "user1@example.com"},
+    {"name": "User 2", "email": "user2@example.com"},
+    {"name": "User 3", "email": "user3@example.com"}
+]'
+```
+
+```json
+{
+    "total": 3,
+    "results": [
+        {
+            "status": "success",
+            "user": {
+                "id": 1,
+                "name": "User 1",
+                "email": "user1@example.com"
+            }
+        },
+        {
+            "status": "success",
+            "user": {
+                "id": 2,
+                "name": "User 2",
+                "email": "user2@example.com"
+            }
+        },
+        {
+            "status": "success",
+            "user": {
+                "id": 3,
+                "name": "User 3",
+                "email": "user3@example.com"
+            }
+        }
+    ]
+}
+
